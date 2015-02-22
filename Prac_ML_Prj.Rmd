@@ -1,0 +1,222 @@
+---
+title: "Practical Machine Learning Project"
+author: "M. Eden"
+date: "February 21, 2015"
+output: html_document
+---
+
+### Project Background - About the Data
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. The goal was to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). There are five classifications:  A, B, C, D, and E.  Here is a brief excerpt from the site to explain the data collection and classes:
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).  Class A corresponds to the specificed execution of the exercise, while the other 4 classes correspond to common mistakes.
+
+### Goal of Machine Learning Project
+
+The goal in machine learning is to build a classification or regression rule from a set of samples (training data), and based on the learned rule, predict the class for new data. The goal of this particular project is to predict the manner in which the participants did the exercise.  This is the “classe” variable in the training set. Any of the other variables can be used for prediction. The training data will be used to develop the model.  This report will explain construction of the prediction model, cross validation, and expected and actual sample error.  The prediction model will be used to predict 20 different test cases.
+
+### WLE Dataset
+
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+Source of the WLE dataset used in this project: 
+http://groupware.les.inf.puc-rio.br/har. 
+
+For additional information, view the research paper here:
+http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+### Steps Used in the Machine Learning Project
+
+First, the data and necessary libraries will be loaded.  The data is then cleaned to remove unnecessary variables and non-relevant data, thereby producing a tidy dataset.  For cross-validation purposes, the data is divided into a training set and test set.  Certain variables are chosen for prediction, and the prediction model (random forest) is selected.  An explanation is given below for the prediction variables and prediction model.  Sample error is predicted based on the application of the model to the training set.  The model is then applied to classify the 20 test cases.
+
+### Load the data
+
+```r
+# Load the training and test datasets
+pmlTraining <- read.csv("pml-training.csv", header=TRUE, , na.strings=c("NA","#DIV/0!", ""))
+pmlTest <- read.csv("pml-testing.csv", , na.strings=c("NA","#DIV/0!", ""))
+
+dim(pmlTraining)
+dim(pmlTest)
+```
+  [1] 19622   160
+  
+  [1]  20 160
+  
+The training data contains 19622 observations and 160 variables.  The test data contains 20 observations and 160 variables.
+
+### Selection of Random Forest
+
+The data was initially explored using several functions including dim(pmlTraining), summary(pmlTraining), head(pmlTraining), names(pmlTraining), and str(pmlTraining).  After exploring the data, random forest was selected to build the prediction model.  Since our source training data contains all possible classifications (A, B, C, D, and E), has some variance and some missing data, random forest model was chosen.  After utilizing this model, if the level of error is not acceptable, other methods will be explored.
+
+According to Kaggle.com (https://www.kaggle.com/wiki/RandomForests), Random Forest is a trademark term for an ensemble of decision trees.  Unlike single decision trees which are likely to suffer from high variance or bias, Random Forests use averaging.  The algorithm for inducing a random forest was developed by Leo Breiman and Adele Cutler (http://en.wikipedia.org/wiki/Random_forest). 
+
+The random forest model creates and utilizes many different decision trees. The classification is evaluated for all trees, and the classification that is chosen by the most decision trees determines the classification that is assigned.  Random forest models generally do well at handling data with high variance.  Random forest models maintain accuracy even when portions of the data are missing, and includes effective methods for estimating missing data (http://www.datasciencecentral.com/profiles/blogs/random-forests-algorithm).  It is important that the training data contain samples with all possible classifications, as random forests are not able to predict beyond the range available in the training data (http://wgrass.media.osaka-cu.ac.jp/gisideas10/viewpaper.php?id=342).
+
+### Clean the Data and Produce a Tidy Dataset
+
+To clean the dataset and produce a tidy dataset that would be best suited for the prediction model, all irrelevant variables as well as variables containing NA values were removed (53 variables remained).  The following columns were removed as they were determined to not be useful in the prediction model:  X (the column numbering the observations), user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window.    
+
+```r
+# remove the first seven columns which are descriptive and not useful for the predictive model
+# X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window
+tidyPmlTraining <- pmlTraining[,8:ncol(pmlTraining)]
+tidyPmlTest <- pmlTest[,8:ncol(pmlTest)]
+
+# remove columns that contain NA values
+tidyPmlTraining <- tidyPmlTraining[,colSums(is.na(tidyPmlTraining)) == 0]
+tidyPmlTest <- tidyPmlTest[,colSums(is.na(tidyPmlTest)) == 0]
+
+dim(tidyPmlTraining)
+dim(tidyPmlTest)
+```
+[1] 19622    53
+
+[1] 20 53
+
+The tidy training dataset contains 19622 observations and 53 variables that will be used for prediction.  The tidy test dataset contains 20 observations and 53 variables.  A manual check was performed to ensure the prediction variables are the same for the tidy training dataset and tidy test dataset.
+
+
+### Cross Validation
+
+The tidy training dataset must be divided for cross validation purposes.  In this step, include the caret package and partition the data so that 60% of the data can be used for testing and 40% for validation.
+
+```r
+# Load the necessary libraries
+library(caret)
+
+set.seed(4321)
+trainIndex <- createDataPartition(y=tidyPmlTraining$classe, p = 0.6, list=FALSE)
+pmlTrainSet <- tidyPmlTraining[trainIndex, ]
+validationSet <- tidyPmlTraining[-trainIndex, ]
+
+```
+
+### Prediction Model:  Random Forest
+
+The next step is to apply the random forest prediction to the tidy training dataset.  In this step we load the needed libraries and create the model.  Then, we construct a Confusion Matrix to check the accuracy of the model.  Prior to running the model and Confusion Matrix, the hope is for 98% accuracy or better.
+
+```r
+# Load the necessary libraries
+library(ggplot2)
+library(randomForest)
+
+predModel <- randomForest(classe ~ ., data = pmlTrainSet)
+
+predictResults <- predict(predModel, validationSet)
+confusionMatrix(predictResults, validationSet$classe)
+
+```
+As shown by the Confusion Matrix below, the accuracy of the model according to the results of the validationSet exceeds 99%.
+
+    Confusion Matrix and Statistics
+
+              Reference
+    Prediction    A    B    C    D    E
+             A 2231   13    0    0    0
+             B    0 1500    7    0    0
+             C    0    5 1358   13    0
+             D    0    0    3 1272    2
+             E    1    0    0    1 1440
+
+    Overall Statistics
+                                          
+                   Accuracy : 0.9943          
+                     95% CI : (0.9923, 0.9958)
+        No Information Rate : 0.2845          
+        P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+                      Kappa : 0.9927          
+     Mcnemar's Test P-Value : NA              
+
+    Statistics by Class:
+
+                         Class: A Class: B Class: C Class: D Class: E
+    Sensitivity            0.9996   0.9881   0.9927   0.9891   0.9986
+    Specificity            0.9977   0.9989   0.9972   0.9992   0.9997
+    Pos Pred Value         0.9942   0.9954   0.9869   0.9961   0.9986
+    Neg Pred Value         0.9998   0.9972   0.9985   0.9979   0.9997
+    Prevalence             0.2845   0.1935   0.1744   0.1639   0.1838
+    Detection Rate         0.2843   0.1912   0.1731   0.1621   0.1835
+    Detection Prevalence   0.2860   0.1921   0.1754   0.1628   0.1838
+    Balanced Accuracy      0.9986   0.9935   0.9950   0.9942   0.9992
+
+
+Since the accuracy level of the prediction model exceeds 99%, we are pleased with the random forest model.
+
+### Variables Used For Prediction
+
+Below is a list of the 53 variables used in the prediction model, listed in order of importance in the prediction model.  
+
+```r
+varIm <- varImp(predModel)
+dataVarIm <- as.data.frame(varIm)
+attach(dataVarIm)
+orderVarIm <- dataVarIm[order(-dataVarIm$Overall), ,drop=FALSE]
+
+```
+
+                           Overall
+    roll_belt            741.19748
+    yaw_belt             523.80083
+    pitch_forearm        469.49034
+    magnet_dumbbell_z    444.06868
+    magnet_dumbbell_y    418.99318
+    pitch_belt           404.17846
+    roll_forearm         367.54902
+    magnet_dumbbell_x    294.37973
+    accel_dumbbell_y     263.06858
+    roll_dumbbell        247.50520
+    accel_belt_z         243.18191
+    magnet_belt_z        240.55481
+    magnet_belt_y        235.04409
+    accel_dumbbell_z     196.03222
+    accel_forearm_x      191.12680
+    gyros_belt_z         185.61393
+    roll_arm             181.10488
+    magnet_forearm_z     174.50637
+    total_accel_dumbbell 166.63492
+    magnet_belt_x        165.52828
+    yaw_dumbbell         157.22025
+    magnet_arm_x         150.17705
+    yaw_arm              146.97413
+    accel_forearm_z      146.72280
+    accel_dumbbell_x     146.70670
+    gyros_dumbbell_y     144.33919
+    accel_arm_x          142.51919
+    total_accel_belt     136.07758
+    magnet_arm_y         131.49228
+    magnet_forearm_y     131.14707
+    magnet_forearm_x     129.41942
+    magnet_arm_z         111.95887
+    pitch_dumbbell       107.09828
+    yaw_forearm          105.47853
+    pitch_arm            101.22352
+    accel_arm_y           91.57335
+    accel_forearm_y       85.40773
+    gyros_arm_y           80.58032
+    accel_belt_y          80.40495
+    accel_arm_z           78.39817
+    gyros_dumbbell_x      78.00069
+    gyros_arm_x           77.74564
+    gyros_forearm_y       73.63794
+    gyros_belt_y          71.89443
+    total_accel_forearm   70.75306
+    accel_belt_x          70.70787
+    total_accel_arm       60.84278
+    gyros_belt_x          59.92156
+    gyros_dumbbell_z      52.04353
+    gyros_forearm_z       49.68138
+    gyros_forearm_x       47.88702
+    gyros_arm_z           37.94587
+    
+    
+Since accuracy of the model exceeds 99%, we are happy with the current model.  If higher accuracy were desired, we could select the top variables, for example the top 25, and create a new model based on these most important variables.
